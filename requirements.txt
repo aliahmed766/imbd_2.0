@@ -1,10 +1,7 @@
 streamlit
 tensorflow
 numpy
-pickle-mixin
 scikit-learn
-matplotlib
-seaborn
 transformers
-accelerate
 torch
+sentencepiece
