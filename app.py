@@ -14,6 +14,12 @@ st.set_page_config(
 )
 
 # ----------------------------
+# CONSTANTS
+# ----------------------------
+MAX_LEN = 200
+LLM_CONFIDENCE_THRESHOLD = 0.75
+
+# ----------------------------
 # LOAD RNN MODEL
 # ----------------------------
 @st.cache_resource
@@ -24,16 +30,14 @@ def load_rnn():
     return model, tokenizer
 
 # ----------------------------
-# LOAD LLM
+# LOAD LIGHTWEIGHT LLM (SAFE)
 # ----------------------------
 @st.cache_resource
 def load_llm():
     return pipeline(
-        "text-generation",
-        model="Qwen/Qwen2.5-3B-Instruct",
-        device_map="auto",
-        temperature=0.2,
-        max_new_tokens=180
+        "text2text-generation",
+        model="google/flan-t5-small",
+        max_new_tokens=120
     )
 
 rnn_model, tokenizer = load_rnn()
@@ -52,48 +56,46 @@ st.markdown("""
 review = st.text_area("✍️ Enter a movie review", height=150)
 
 # ----------------------------
-# INFERENCE
+# ANALYSIS
 # ----------------------------
 if st.button("🔍 Analyze Sentiment"):
 
     if not review.strip():
-        st.warning("Please enter a review.")
+        st.warning("⚠️ Please enter a review.")
     else:
-        seq = tokenizer.texts_to_sequences([review])
-        padded = pad_sequences(seq, maxlen=200, padding="post")
+        # ----- RNN Prediction -----
+        sequence = tokenizer.texts_to_sequences([review])
+        padded = pad_sequences(sequence, maxlen=MAX_LEN, padding="post")
 
         prob = rnn_model.predict(padded)[0][0]
         sentiment = "Positive" if prob > 0.5 else "Negative"
         confidence = prob if prob > 0.5 else 1 - prob
 
-        prompt = f"""
-You are a sentiment analysis expert.
-
-Review:
-\"\"\"{review}\"\"\"
-
-Initial Prediction:
-Sentiment: {sentiment}
-Confidence: {confidence:.2f}
-
-Tasks:
-1. Verify sentiment correctness
-2. Correct only if clearly wrong
-3. Provide a short explanation (2–3 lines)
-
-Answer format:
-Sentiment:
-Explanation:
-"""
-
-        llm_result = llm(prompt)[0]["generated_text"]
-
+        # ----- Display RNN Result -----
         st.subheader("📊 RNN Prediction")
         st.success(f"**{sentiment}**")
-        st.write(f"Confidence: {confidence*100:.2f}%")
+        st.write(f"Confidence: `{confidence*100:.2f}%`")
 
-        st.subheader("🧠 LLM Refined Output")
-        st.markdown(llm_result)
+        # ----- LLM Validation (Only if needed) -----
+        if confidence < LLM_CONFIDENCE_THRESHOLD:
+            st.subheader("🧠 LLM Validation")
+
+            prompt = f"""
+Review:
+{review}
+
+Initial sentiment: {sentiment}
+
+Verify the sentiment and explain briefly.
+"""
+
+            llm_output = llm(prompt)[0]["generated_text"]
+            st.markdown(llm_output)
+
+        else:
+            st.info("✅ High confidence prediction — LLM validation skipped.")
 
         if sentiment == "Positive":
             st.balloons()
+        else:
+            st.warning("👎 Negative sentiment detected.")
